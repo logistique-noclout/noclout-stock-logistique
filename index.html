@@ -1550,7 +1550,7 @@ function renderScanner() {
             }
             const q = val.toLowerCase();
             const results = S.catalogue.filter(p =>
-              p.nom.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+              (p.nom||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)
             ).slice(0, 8);
             const box = document.getElementById('scannerAddBox');
             if (!box) return;
@@ -1977,7 +1977,7 @@ function renderSessCard(s, folderId) {
                     }
                     const q = val.toLowerCase();
                     const results = S.catalogue.filter(p =>
-                      p.nom.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)
+                      (p.nom||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)
                     ).slice(0, 10);
                     S.sessAddSuggest = {...S.sessAddSuggest, [s.id]: results};
                     // Mettre à jour la boîte sans re-render
@@ -2198,7 +2198,7 @@ function renderDefectueux() {
 
 function renderCatalogueList(container) {
   const filtered = S.catalogue.filter(p =>
-    !S.searchCat || p.sku.includes(S.searchCat.toUpperCase()) || p.nom.toLowerCase().includes(S.searchCat.toLowerCase())
+    !S.searchCat || p.sku.includes(S.searchCat.toUpperCase()) || (p.nom||'').toLowerCase().includes(S.searchCat.toLowerCase())
   );
   container.innerHTML = '';
   if (filtered.length === 0) {
@@ -2268,7 +2268,7 @@ function renderCatalogueList(container) {
 
 function renderCatalogue() {
   const filtered = S.catalogue.filter(p =>
-    !S.searchCat || p.sku.includes(S.searchCat.toUpperCase()) || p.nom.toLowerCase().includes(S.searchCat.toLowerCase())
+    !S.searchCat || p.sku.includes(S.searchCat.toUpperCase()) || (p.nom||'').toLowerCase().includes(S.searchCat.toLowerCase())
   );
   // Grouper par nom produit
   const groups = {};
@@ -2407,7 +2407,7 @@ function renderModalPacking() {
       S.plSuggest = [];
     } else {
       const q = val.toLowerCase();
-      S.plSuggest = S.catalogue.filter(p => p.nom.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 12);
+      S.plSuggest = S.catalogue.filter(p => (p.nom||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)).slice(0, 12);
     }
     // Mettre à jour uniquement la boîte de suggestions dans le DOM
     const box = document.getElementById('plSuggestBox');
@@ -2828,7 +2828,7 @@ function renderModalSessPL() {
       return;
     }
     const q = val.toLowerCase();
-    const results = S.catalogue.filter(p => p.nom.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)).slice(0, 10);
+    const results = S.catalogue.filter(p => (p.nom||'').toLowerCase().includes(q) || (p.sku||'').toLowerCase().includes(q)).slice(0, 10);
     const box = document.getElementById('sessPLSugBox');
     if (!box) return;
     box.innerHTML = '';
