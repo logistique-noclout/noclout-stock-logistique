@@ -2701,14 +2701,19 @@ function renderModalCsv() {
               }
               if (!rows.length) { btn.textContent = 'Importer'; btn.disabled = false; return alert('Aucun produit trouvé'); }
               let count = 0;
+              let lastErr = null;
               for (let i = 0; i < rows.length; i += 50) {
                 const batch = rows.slice(i, i + 50);
-                const {error} = await db.from('catalogue').upsert(batch, {onConflict: 'sku'});
-                if (!error) count += batch.length;
+                const {data: upserted, error} = await db.from('catalogue')
+                  .upsert(batch, {onConflict: 'sku', ignoreDuplicates: false})
+                  .select();
+                if (error) { lastErr = error; console.error('Upsert error:', error); }
+                else count += (upserted || batch).length;
               }
               await loadCatalogue();
               set({mCsv: false});
-              alert('✓ ' + count + ' produits importés sur ' + rows.length);
+              if (lastErr) alert('⚠ Erreur partielle : ' + lastErr.message + '\n\n' + count + ' produits importés sur ' + rows.length);
+              else alert('✓ ' + count + ' produits importés sur ' + rows.length);
             } catch (err) {
               alert('Erreur import : ' + err.message);
               btn.textContent = 'Importer'; btn.disabled = false;
