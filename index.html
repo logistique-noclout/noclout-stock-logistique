@@ -2697,7 +2697,7 @@ function renderModalCsv() {
                 if (title) lastTitle = title;
                 if (cat) lastCat = cat;
                 if (img) lastImg = img;
-                rows.push({sku, nom: lastTitle, categorie: lastCat || null, taille: cols[tailleIdx]?.trim() || null, image_url: lastImg || null});
+                rows.push({id: crypto.randomUUID(), sku, nom: lastTitle, categorie: lastCat || null, taille: cols[tailleIdx]?.trim() || null, image_url: lastImg || null});
               }
               if (!rows.length) { btn.textContent = 'Importer'; btn.disabled = false; return alert('Aucun produit trouvé'); }
               let count = 0;
