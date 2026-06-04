@@ -2964,7 +2964,7 @@ function renderModalSessPL() {
           }
         }}, '🗑 Supprimer') : null,
         h('button', {class: 'btn btn-outline', onClick: () => { window._sessPLItems = null; set({mSessPL: null}); }}, 'Annuler'),
-        h('button', {class: 'btn btn-primary', onClick: () => {
+        h('button', {class: 'btn btn-primary', onClick: async () => {
           // Récupérer les qtés des inputs number
           document.querySelectorAll('#sessPLList .qty-input').forEach((inp, i) => {
             if (window._sessPLItems[i]) window._sessPLItems[i].attendu = Math.max(1, parseInt(inp.value)||1);
