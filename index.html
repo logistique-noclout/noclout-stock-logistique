@@ -421,10 +421,7 @@ function set(patch) {
   Object.assign(S, patch);
   // Auto-sauvegarde de la packing list à chaque changement
   if ('packingList' in patch && S.session) {
-    try {
-      if (S.packingList) localStorage.setItem('pl_' + S.session.id, JSON.stringify(S.packingList));
-      else localStorage.removeItem('pl_' + S.session.id);
-    } catch(e) {}
+    dbSavePL(S.session.id, S.packingList || null);
   }
   render();
 }
@@ -439,7 +436,7 @@ async function loadSessions() {
   const _scrollPos = document.getElementById('sessList')?.scrollTop || 0;
   const _pageScroll = document.querySelector('.page-body')?.scrollTop || 0;
   set({loadingSess: true});
-  const {data} = await db.from('sessions').select('*,scans(*)').order('created_at', {ascending: false});
+  const {data} = await db.from('sessions').select('*,scans(*),packing_list').order('created_at', {ascending: false});
   set({sessions: data || [], loadingSess: false});
   // Restaurer le scroll après reconstruction du DOM
   requestAnimationFrame(() => {
@@ -450,10 +447,8 @@ async function loadSessions() {
   });
   // Si une session est active en cours, restaurer la PL depuis localStorage
   if (S.session && !S.packingList) {
-    try {
-      const saved = localStorage.getItem('pl_' + S.session.id);
-      if (saved) { const pl = JSON.parse(saved); if (pl && pl.length > 0) set({packingList: pl}); }
-    } catch(e) {}
+    const pl = await dbLoadPL(S.session.id);
+    if (pl && pl.length > 0) set({packingList: pl});
   }
 }
 async function loadDefectueux() {
@@ -524,6 +519,30 @@ async function dbDeleteScan(scanId) {
 }
 async function dbUpdateScan(scanId, fields) {
   await db.from('scans').update(fields).eq('id', scanId);
+}
+// ── PACKING LIST — Supabase ──────────────────────────────────────────────
+async function dbSavePL(sessionId, pl) {
+  if (!sessionId) return;
+  try {
+    await db.from('sessions').update({packing_list: pl || null}).eq('id', sessionId);
+    // Garder aussi localStorage comme backup
+    if (pl) localStorage.setItem('pl_' + sessionId, JSON.stringify(pl));
+    else localStorage.removeItem('pl_' + sessionId);
+  } catch(e) {
+    // Fallback localStorage si colonne pas dispo
+    if (pl) localStorage.setItem('pl_' + sessionId, JSON.stringify(pl));
+    else localStorage.removeItem('pl_' + sessionId);
+  }
+}
+async function dbLoadPL(sessionId) {
+  if (!sessionId) return null;
+  try {
+    const {data} = await db.from('sessions').select('packing_list').eq('id', sessionId).single();
+    if (data?.packing_list && data.packing_list.length > 0) return data.packing_list;
+  } catch(e) {}
+  // Fallback localStorage
+  try { const raw = localStorage.getItem('pl_' + sessionId); if (raw) return JSON.parse(raw); } catch(e) {}
+  return null;
 }
 async function dbSaveDefect(sku, nom, type, note, sessionId) {
   await db.from('defectueux').insert({sku, nom, type_defaut: type, note: note || null, session_id: sessionId || null});
@@ -598,7 +617,7 @@ async function exportExcelFolder(folder) {
   const sessionsPL = [];
   for (const s of sessions) {
     let pl = [];
-    try { const raw = localStorage.getItem('pl_' + s.id); if (raw) pl = JSON.parse(raw); } catch(e) {}
+    pl = (await dbLoadPL(s.id)) || s.packing_list || [];
     const scans = (s.scans||[]).filter(sc => (sc.qty_pos||0) > 0 || (sc.qty_neg||0) > 0);
     const att = pl.reduce((a,p) => a+(p.attendu||0), 0);
     const rec = scans.reduce((a,sc) => a+(sc.qty_pos||0), 0);
@@ -763,7 +782,7 @@ async function startSession() {
     set({session: data, scans: [], history: [], scanFeedback: null, sessionName: ''});
     // Sauvegarder immédiatement la PL si elle existe
     if (S.packingList) {
-      try { localStorage.setItem('pl_' + data.id, JSON.stringify(S.packingList)); } catch(e) {}
+      await dbSavePL(data.id, S.packingList);
     }
   }
 }
@@ -777,17 +796,14 @@ async function closeSession() {
   if (opt === 'test') {
     await dbDeleteSession(S.session.id);
   } else if (opt === 'pause') {
-    // Utiliser closedPL qui est capturé avant tout changement d'état
-    if (closedPL) localStorage.setItem('pl_' + closedSession.id, JSON.stringify(closedPL));
-    else localStorage.removeItem('pl_' + closedSession.id);
+    await dbSavePL(closedSession.id, closedPL);
     await dbPauseSession(closedSession.id);
   } else {
     await dbCloseSession(S.session.id);
   }
-  // Nettoyer la PL du localStorage si session clôturée ou supprimée (pas en pause)
-  if (opt !== 'pause') {
+  // Nettoyer la PL si session supprimée (test)
+  if (opt === 'test') {
     localStorage.removeItem('pl_' + closedSession.id);
-    localStorage.removeItem('pl_session_' + closedSession.id);
   }
   set({session: null, scans: [], history: [], packingList: null, mConfirmClose: false, closeOption: 'save'});
   if (opt === 'export') {
@@ -1222,7 +1238,7 @@ async function addSessionToWorkbook(wb, session, scans, pl, sheetPrefix) {
 async function exportExcelSession(session, scans, pl) {
   // Récupérer la PL depuis localStorage ou état courant
   if (!pl || pl.length === 0) {
-    try { const raw = localStorage.getItem('pl_' + session.id); if (raw) pl = JSON.parse(raw); } catch(e) {}
+    pl = (await dbLoadPL(session.id)) || session.packing_list || [];
   }
   if (!pl || pl.length === 0) pl = S.packingList || [];
   const wb = new ExcelJS.Workbook();
@@ -1926,22 +1942,27 @@ function renderSessCard(s, folderId) {
             h('div', {style: 'margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)'},
               (() => {
                 const sessPlKey = 'pl_' + s.id;
-                let sessPL = null;
-                try { const raw = localStorage.getItem(sessPlKey); if (raw) sessPL = JSON.parse(raw); } catch(e) {}
+                // Lire depuis Supabase (packing_list dans la session) ou localStorage en fallback
+                let sessPL = s.packing_list || null;
+                if (!sessPL) { try { const raw = localStorage.getItem(sessPlKey); if (raw) sessPL = JSON.parse(raw); } catch(e) {} }
                 return h('div', {},
                   h('div', {style: 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px'},
                     h('div', {style: 'font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px'},
                       sessPL ? '📋 Packing list (' + sessPL.length + ' refs — ' + sessPL.reduce((a,p)=>a+(p.attendu||0),0) + ' articles)' : '📋 Packing list — non définie'
                     ),
                     h('div', {style: 'display:flex;gap:6px'},
-                      sessPL ? h('button', {class: 'btn btn-danger btn-sm', onClick: e => {
+                      sessPL ? h('button', {class: 'btn btn-danger btn-sm', onClick: async e => {
                         e.stopPropagation();
                         if (confirm('Supprimer la packing list de cette session ?')) {
+                          await dbSavePL(s.id, null);
                           localStorage.removeItem(sessPlKey);
-                          set({expandedSession: S.expandedSession}); // forcer re-render
+                          // Mettre à jour S.sessions localement
+                          S.sessions = S.sessions.map(sess => sess.id === s.id ? {...sess, packing_list: null} : sess);
+                          set({sessions: [...S.sessions], expandedSession: S.expandedSession});
                         }
                       }}, '🗑 Effacer') : null,
                       h('button', {class: 'btn btn-outline btn-sm', onClick: e => {
+
                         e.stopPropagation();
                         // Ouvrir un textarea pour saisir la packing list
                         set({mSessPL: {sessionId: s.id, key: sessPlKey, current: sessPL}});
@@ -2052,8 +2073,9 @@ function renderSessCard(s, folderId) {
             ),
             // ── Résumé visuel PL vs scans en temps réel ──
             (() => {
-              let sessPLv = null;
-              try { const raw = localStorage.getItem('pl_' + s.id); if (raw) sessPLv = JSON.parse(raw); } catch(e) {}
+              // Lire depuis Supabase (dans l'objet session) ou localStorage en fallback
+              let sessPLv = s.packing_list || null;
+              if (!sessPLv) { try { const raw = localStorage.getItem('pl_' + s.id); if (raw) sessPLv = JSON.parse(raw); } catch(e) {} }
               if (!sessPLv || !sessPLv.length) return null;
               let conformes = 0, manquants = 0, surplus = 0, totalAttendu = 0, totalScanné = 0;
               const detailsManq = [], detailsSupl = [];
@@ -2932,11 +2954,13 @@ function renderModalSessPL() {
         )
       ),
       h('div', {class: 'modal-ft'},
-        current ? h('button', {class: 'btn btn-danger', onClick: () => {
+        current ? h('button', {class: 'btn btn-danger', onClick: async () => {
           if (confirm('Supprimer la packing list ?')) {
+            await dbSavePL(sessionId, null);
             localStorage.removeItem(key);
+            S.sessions = S.sessions.map(sess => sess.id === sessionId ? {...sess, packing_list: null} : sess);
             window._sessPLItems = null;
-            set({mSessPL: null, expandedSession: S.expandedSession});
+            set({mSessPL: null, sessions: [...S.sessions], expandedSession: S.expandedSession});
           }
         }}, '🗑 Supprimer') : null,
         h('button', {class: 'btn btn-outline', onClick: () => { window._sessPLItems = null; set({mSessPL: null}); }}, 'Annuler'),
@@ -2964,14 +2988,17 @@ function renderModalSessPL() {
           }
           if (!window._sessPLItems.length) return;
           const plToSave = [...window._sessPLItems];
-          try { localStorage.setItem(key, JSON.stringify(plToSave)); } catch(e) {}
+          // Sauvegarder dans Supabase
+          await dbSavePL(sessionId, plToSave);
+          // Mettre à jour S.sessions localement
+          S.sessions = S.sessions.map(sess => sess.id === sessionId ? {...sess, packing_list: plToSave} : sess);
           // Si c'est la session active en scanner, mettre à jour S.packingList aussi
           if (S.session && String(S.session.id) === String(sessionId)) {
             S.packingList = plToSave;
           }
           window._sessPLItems = null;
           // Forcer re-render complet pour mettre à jour le visuel
-          set({mSessPL: null, expandedSession: sessionId});
+          set({mSessPL: null, sessions: [...S.sessions], expandedSession: sessionId});
         }}, '✓ Enregistrer')
       )
     )
