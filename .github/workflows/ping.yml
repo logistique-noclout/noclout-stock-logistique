@@ -2,8 +2,7 @@ name: Keep Alive
 
 on:
   schedule:
-    - cron: '0 8 * * 1'
-    - cron: '0 8 * * 4'
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,12 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping GitHub Pages
-        run: curl -s https://logistique-noclout.github.io/noclout-stock-logistique/ > /dev/null && echo "OK"
-      
+        run: curl -s -o /dev/null -w "%{http_code}" https://logistique-noclout.github.io/noclout-stock-logistique/ || true
+
       - name: Ping Supabase
         run: |
-          curl -s \
+          curl -s -o /dev/null -w "%{http_code}" \
             -H "apikey: sb_publishable_Qk84KdsAE6UTQ_jSfRKmZA_du0x-w7A" \
             -H "Authorization: Bearer sb_publishable_Qk84KdsAE6UTQ_jSfRKmZA_du0x-w7A" \
-            "https://pqdxbtljvcgcoeldxael.supabase.co/rest/v1/sessions?select=id&limit=1" \
-            && echo "Supabase OK"
+            "https://pqdxbtljvcgcoeldxael.supabase.co/rest/v1/sessions?select=id&limit=1" || true
